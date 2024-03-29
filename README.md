@@ -7,3 +7,6 @@ An example to handle fortran derived types
  - passing derived type instance as an argument of a subroutine
  - handle several derived type
  - handle composition of derived tyes
+
+ ## Strings
+ An example to handle a string as an argument of a subroutine
