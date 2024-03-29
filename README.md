@@ -10,3 +10,6 @@ An example to handle fortran derived types
 
  ## Strings
  An example to handle a string as an argument of a subroutine
+
+## FFTW
+ An example to perform a 2D FFT using fftw library (tested in a Linux environment)
