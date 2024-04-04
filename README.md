@@ -13,3 +13,6 @@ An example to handle fortran derived types
 
 ## FFTW
  An example to perform a 2D FFT using fftw library (tested in a Linux environment)
+
+ ## Macro
+ An example using compiler preprocessing directives. Pay attention on file extension (F90, not f90)
