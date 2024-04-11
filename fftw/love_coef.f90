@@ -26,6 +26,61 @@ real function CN3(x, y, dx, dy, E, nu)
     cN3 = -1.*((1. - nu**2)/(real(PI)*E))*(cN31+cN32-cN33-cN34-cN35-cN36+cN37+cN38)
 end function CN3
 
+real function Hertz_pressure_distribution(r, Ph, a)
+    !! Compute Hertz pressure distribution at a given radius
+    implicit none
+
+    real, intent(in) :: r   !! Radius
+    real, intent(in) :: Ph  !! Hertz pressure
+    real, intent(in) :: a   !! Hertz radius
+
+    if (r >= a) then
+        Hertz_pressure_distribution = 0.
+    else
+        Hertz_pressure_distribution = Ph*(1. - (r**2.) / (a**2.))**0.5
+    endif
+end function Hertz_pressure_distribution
+
+real function Hertz_pressure_distribution_xy(x, y, Ph, a)
+    !! Compute Hertz pressure distribution at given coordinates x/y
+    implicit none
+
+    real, intent(in) :: x, y
+    real, intent(in) :: Ph
+    real, intent(in) :: a
+
+    real :: Hertz_pressure_distribution
+
+    Hertz_pressure_distribution_xy = Hertz_pressure_distribution((x**2. + y**2.)**0.5, Ph, a)
+end function Hertz_pressure_distribution_xy
+
+real function Hertz_pressure(load, a)
+    !! Compute Hertz pressure value for a shpere/plane contact
+    implicit none
+
+    real, parameter :: pi = 3.141592653
+    real, intent(in) :: load
+    real, intent(in) :: a   !! Hertz radius
+
+    Hertz_pressure = 3.*load/(2.*pi*a**2.)
+end function Hertz_pressure
+
+real function Hertz_radius(load, radius, E, nu)
+    !! Compute Hertz radius fo a shpare plane contact
+    implicit none
+
+    real, intent(in) :: load
+    real, intent(in) :: radius  !! Sphere radius
+    real, intent(in) :: E, nu  !! Linear elasticity parameters
+
+    real :: Estar
+
+    Estar = 0.5*E/(1. - nu**2.)
+    Hertz_radius = (3.*load*radius/(4.*Estar))**(1./3.)
+end function Hertz_radius
+
+
+
 subroutine wrap_around(g, g_wrap, nx, ny)
     !! perform symmetric wraparound of coefficients
     implicit none
@@ -68,11 +123,19 @@ program test_fftw
 
     integer :: nx, ny
     real :: dx, dy
-    real :: nu, E, Estar
+    real :: nu, E
+    real :: load, radius
     real, allocatable, dimension(:, :) :: g_love, g_love_wrap
+    complex, allocatable, dimension(:,:) :: gf_love_wrap
+    real, allocatable, dimension(:, :) :: pres, pres_zp
+    complex, allocatable, dimension(:,:) :: presf_zp
+    complex, allocatable, dimension(:, :) :: uz3, uz3f
+
     real :: cN3
 
     integer :: i, j
+    real :: Hertz_radius, Hertz_pressure, Hertz_pressure_distribution_xy
+    real :: a, Ph
 
     !! Specific for fftw
     complex, allocatable, dimension(:, :) :: in, out
@@ -82,16 +145,20 @@ program test_fftw
     !! Initialization
     E = 210000.
     nu = 0.3
-    Estar = E/(1. - nu**2.)
     dx = 0.01
     dy = 0.01
-    nx = 49
-    ny = 49
+    nx = 11
+    ny = 11
+    load = 1.
+    radius = 1000.
 
 
-    allocate(g_love(nx, ny), g_love_wrap(2*nx, 2*ny))
+    allocate(g_love(nx, ny), g_love_wrap(2*nx, 2*ny), gf_love_wrap(2*nx, 2*ny))
+    allocate(pres(nx, ny), pres_zp(2*nx, 2*ny), presf_zp(2*nx, 2*ny))
+    allocate(uz3(2*nx, 2*ny), uz3f(2*nx, 2*ny))
     allocate(in(2*nx, 2*ny), out(2*nx, 2*ny))
 
+    !! Compute influence coefficients
     do i=1, nx
         do j=1, ny
             g_love(i, j) = CN3((i-1)*dx, (j-1)*dy, dx, dy, E, nu)
@@ -103,8 +170,11 @@ program test_fftw
     !! Implicit conversion to complex type
     in(:,:) = g_love_wrap(:,:)
 
-    write(*,*) minval(real(in)), maxval(real(in))
-    write(*,*) minval(aimag(in)), maxval(aimag(in))
+    write(*,*) "Influence coefficients in physical space"
+    write(*,*) "----------------------------------------"
+    write(*,*) "Real part, min/max: ", minval(real(in)), maxval(real(in))
+    write(*,*) "Imaginary part, min/max: ", minval(aimag(in)), maxval(aimag(in))
+    write(*,*)
 
 
     !! WARNING: attention should be care to storage convention (row major/col major)
@@ -112,11 +182,55 @@ program test_fftw
     plan = fftwf_plan_dft_2d(2*ny, 2*nx, in, out, FFTW_FORWARD, FFTW_ESTIMATE)
     call fftwf_execute_dft(plan, in, out)
     call fftwf_destroy_plan(plan)
+    gf_love_wrap(:,:) = out(:,:)
 
+    write(*,*) "Influence coefficients in Fourier space"
+    write(*,*) "---------------------------------------"
+    write(*,*) "Real part, min/max: ", minval(real(gf_love_wrap)), maxval(real(gf_love_wrap))
+    write(*,*) "Imaginary part, min/max: ", minval(aimag(gf_love_wrap)), maxval(aimag(gf_love_wrap))
+    write(*,*)
 
+    !! Compute input pressure
+    a = Hertz_radius(load, radius, E, nu)
+    Ph = Hertz_pressure(load, a)
 
-    write(*,*) minval(real(out)), maxval(real(out))
-    write(*,*) minval(aimag(out)), maxval(aimag(out))
+    do i = 1, nx
+        do j = 1, ny
+            pres(i, j) = Hertz_pressure_distribution_xy(dx*(i - nx/2 - 1), dy*(i - ny/2 - 1), Ph, a)
+        enddo
+    enddo
+
+    pres_zp(:, :) = 0.
+    pres_zp(:nx, :ny) = pres(:,:)
+
+    in(:,:) = pres_zp(:,:)
+    plan = fftwf_plan_dft_2d(2*ny, 2*nx, in, out, FFTW_FORWARD, FFTW_ESTIMATE)
+    call fftwf_execute_dft(plan, in, out)
+    call fftwf_destroy_plan(plan)
+    presf_zp(:,:) = out(:,:)
+    write(*,*) "Pressure in Fourier space"
+    write(*,*) "---------------------------------------"
+    write(*,*) "Real part, min/max: ", minval(real(presf_zp)), maxval(real(presf_zp))
+    write(*,*) "Imaginary part, min/max: ", minval(aimag(presf_zp)), maxval(aimag(presf_zp))
+    write(*,*)
+
+    !! Compute normal displacement
+    uz3f = presf_zp * gf_love_wrap
+    write(*,*) "Normal displacement in Fourier space"
+    write(*,*) "------------------------------------"
+    write(*,*) "Real part, min/max: ", minval(real(uz3f)), maxval(real(uz3f))
+    write(*,*) "Imaginary part, min/max: ", minval(aimag(uz3f)), maxval(aimag(uz3f))
+    write(*,*)
+
+    plan = fftwf_plan_dft_2d(2*ny, 2*nx, uz3f, uz3, FFTW_BACKWARD, FFTW_ESTIMATE)
+    call fftwf_execute_dft(plan, uz3f, uz3)
+    call fftwf_destroy_plan(plan)
+
+    write(*,*) "Normal displacement in physical space"
+    write(*,*) "-------------------------------------"
+    write(*,*) "Real part, min/max: ", minval(real(uz3/(4*nx*ny))), maxval(real(uz3/(4*nx*ny)))
+    write(*,*) "Imaginary part, min/max: ", minval(aimag(uz3/(4*nx*ny))), maxval(aimag(uz3/(4*nx*ny)))
+    write(*,*)
 
 
 end program test_fftw
