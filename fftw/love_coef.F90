@@ -54,6 +54,21 @@ real function Hertz_pressure_distribution_xy(x, y, Ph, a)
     Hertz_pressure_distribution_xy = Hertz_pressure_distribution((x**2. + y**2.)**0.5, Ph, a)
 end function Hertz_pressure_distribution_xy
 
+real function Hertz_pressure_distribution_xy_elliptic(x, y, Ph, a, b)
+    !! Compute Hertz pressure distribution over an ellptical contct surface
+    implicit none
+
+    real, intent(in) :: x, y
+    real, intent(in) :: Ph
+    real, intent(in) :: a, b
+
+    if (x**2./a**2. + y**2./b**2. > 1.) then
+        Hertz_pressure_distribution_xy_elliptic = 0.
+    else
+        Hertz_pressure_distribution_xy_elliptic = Ph*(1.- (x/a)**2. - (y/b)**2.)**0.5
+    endif
+end function Hertz_pressure_distribution_xy_elliptic
+
 real function Hertz_pressure(load, a)
     !! Compute Hertz pressure value for a shpere/plane contact
     implicit none
@@ -112,6 +127,7 @@ subroutine wrap_around(g, g_wrap, nx, ny)
     enddo
 end subroutine wrap_around
 
+#ifdef LEGACY
 subroutine legacy_fft2d_forward(input_r, input_i, output_r, output_i, n1, n2)
     !! Compute forward FFT2D with legacy source code
     implicit none
@@ -149,6 +165,7 @@ subroutine legacy_fft2d_backward(input_r, input_i, output_r, output_i, n1, n2)
     call fft(output_r, output_i, n3, n1, n1, -1)
     call fft(output_r, output_i, n3, n2, n3, -1)
 end subroutine legacy_fft2d_backward
+#endif
 
 
 
@@ -172,23 +189,29 @@ program test_fftw
 
     integer :: i, j
     real :: Hertz_radius, Hertz_pressure, Hertz_pressure_distribution_xy
+    real :: Hertz_pressure_distribution_xy_elliptic
     real :: a, Ph
 
     !! Specific for fftw
     complex, allocatable, dimension(:, :) :: in, out
     type(c_ptr) :: plan
 
+#ifdef LEGACY
     !! Specific for lecacy fft
-    real, allocatable, dimension(:, :) :: out_leg_r, out_leg_i, zero
-
+    real, allocatable, dimension(:, :) :: out_Cleg_r, out_Cleg_i
+    real, allocatable, dimension(:, :) :: out_Pleg_r, out_Pleg_i
+    real, allocatable, dimension(:, :) :: zero
+    real, allocatable, dimension(:, :) :: uz3f_leg_r, uz3f_leg_i
+    real, allocatable, dimension(:, :) :: uz3_leg_r, uz3_leg_i
+#endif
 
     !! Initialization
     E = 210000.
     nu = 0.3
-    dx = 0.01
-    dy = 0.01
+    dx = 0.05
+    dy = 0.05
     nx = 11
-    ny = 11
+    ny = 7
     load = 1.
     radius = 1000.
 
@@ -197,8 +220,14 @@ program test_fftw
     allocate(pres(nx, ny), pres_zp(2*nx, 2*ny), presf_zp(2*nx, 2*ny))
     allocate(uz3(2*nx, 2*ny), uz3f(2*nx, 2*ny))
     allocate(in(2*nx, 2*ny), out(2*nx, 2*ny))
-    allocate(out_leg_r(2*nx, 2*ny), out_leg_i(2*nx, 2*ny), zero(2*nx, 2*ny))
+#ifdef LEGACY
+    allocate(out_Cleg_r(2*nx, 2*ny), out_Cleg_i(2*nx, 2*ny))
+    allocate(out_Pleg_r(2*nx, 2*ny), out_Pleg_i(2*nx, 2*ny))
+    allocate(uz3f_leg_r(2*nx, 2*ny), uz3f_leg_i(2*nx, 2*ny))
+    allocate(uz3_leg_r(2*nx, 2*ny), uz3_leg_i(2*nx, 2*ny))
+    allocate(zero(2*nx, 2*ny))
     zero(:, :) = 0.0
+#endif
 
     !! Compute influence coefficients
     do i=1, nx
@@ -232,19 +261,15 @@ program test_fftw
     write(*,*) "Imaginary part, min/max: ", minval(aimag(gf_love_wrap)), maxval(aimag(gf_love_wrap))
     write(*,*)
 
-    write(*,*) "Influence coefficients in physical space (are they changed ?)"
-    write(*,*) "-------------------------------------------------------------"
-    write(*,*) "Real part, min/max: ", minval(real(in)), maxval(real(in))
-    write(*,*) "Imaginary part, min/max: ", minval(aimag(in)), maxval(aimag(in))
-    write(*,*)
-
-    call legacy_fft2d_forward(g_love_wrap, zero, out_leg_r, out_leg_i, 2*nx, 2*ny)
+#ifdef LEGACY
+    call legacy_fft2d_forward(g_love_wrap, zero, out_Cleg_r, out_Cleg_i, 2*nx, 2*ny)
 
     write(*,*) "Legagcy influence coefficients in Fourier space"
     write(*,*) "-----------------------------------------------"
-    write(*,*) "Real part, min/max: ", minval(real(gf_love_wrap)), maxval(real(gf_love_wrap))
-    write(*,*) "Imaginary part, min/max: ", minval(aimag(gf_love_wrap)), maxval(aimag(gf_love_wrap))
+    write(*,*) "Real part, min/max: ", minval(out_Cleg_r), maxval(out_Cleg_r)
+    write(*,*) "Imaginary part, min/max: ", minval(out_Cleg_i), maxval(out_Cleg_i)
     write(*,*)
+#endif
 
     !! Compute input pressure
     a = Hertz_radius(load, radius, E, nu)
@@ -252,7 +277,8 @@ program test_fftw
 
     do i = 1, nx
         do j = 1, ny
-            pres(i, j) = Hertz_pressure_distribution_xy(dx*(i - nx/2 - 1), dy*(i - ny/2 - 1), Ph, a)
+            ! pres(i, j) = Hertz_pressure_distribution_xy(dx*(i - nx/2 - 1), dy*(j - ny/2 - 1), Ph, a)
+            pres(i, j) = Hertz_pressure_distribution_xy_elliptic(dx*(i - nx/2 - 1), dy*(j - ny/2 - 1), Ph, a, a*2./3.)
         enddo
     enddo
 
@@ -260,6 +286,11 @@ program test_fftw
     pres_zp(:nx, :ny) = pres(:,:)
 
     in(:,:) = pres_zp(:,:)
+    write(*,*) "Pressure in phys space"
+    write(*,*) "----------------------"
+    write(*,*) "Real part, min/max: ", minval(real(in)), maxval(real(in))
+    write(*,*) "Imaginary part, min/max: ", minval(aimag(in)), maxval(aimag(in))
+    write(*,*)
     plan = fftwf_plan_dft_2d(2*ny, 2*nx, in, out, FFTW_FORWARD, FFTW_ESTIMATE)
     call fftwf_execute_dft(plan, in, out)
     call fftwf_destroy_plan(plan)
@@ -270,6 +301,15 @@ program test_fftw
     write(*,*) "Imaginary part, min/max: ", minval(aimag(presf_zp)), maxval(aimag(presf_zp))
     write(*,*)
 
+#ifdef LEGACY
+    call legacy_fft2d_forward(pres_zp, zero, out_Pleg_r, out_Pleg_i, 2*nx, 2*ny)
+    write(*,*) "Legagcy pressure in Fourier space"
+    write(*,*) "---------------------------------"
+    write(*,*) "Real part, min/max: ", minval(out_Pleg_r), maxval(out_Pleg_r)
+    write(*,*) "Imaginary part, min/max: ", minval(out_Pleg_i), maxval(out_Pleg_i)
+    write(*,*)
+#endif
+
     !! Compute normal displacement
     uz3f = presf_zp * gf_love_wrap
     write(*,*) "Normal displacement in Fourier space"
@@ -277,6 +317,17 @@ program test_fftw
     write(*,*) "Real part, min/max: ", minval(real(uz3f)), maxval(real(uz3f))
     write(*,*) "Imaginary part, min/max: ", minval(aimag(uz3f)), maxval(aimag(uz3f))
     write(*,*)
+
+#ifdef LEGACY
+    uz3f_leg_r = out_Cleg_r*out_Pleg_r - out_Cleg_i*out_Pleg_i
+    uz3f_leg_i = out_Cleg_r*out_Pleg_i + out_Cleg_i*out_Pleg_r
+
+    write(*,*) "Legacy normal displacement in Fourier space"
+    write(*,*) "-------------------------------------------"
+    write(*,*) "Real part, min/max: ", minval(uz3f_leg_r), maxval(uz3f_leg_r)
+    write(*,*) "Imaginary part, min/max: ", minval(uz3f_leg_i), maxval(uz3f_leg_i)
+    write(*,*)
+#endif
 
     plan = fftwf_plan_dft_2d(2*ny, 2*nx, uz3f, uz3, FFTW_BACKWARD, FFTW_ESTIMATE)
     call fftwf_execute_dft(plan, uz3f, uz3)
@@ -288,5 +339,18 @@ program test_fftw
     write(*,*) "Imaginary part, min/max: ", minval(aimag(uz3/(4*nx*ny))), maxval(aimag(uz3/(4*nx*ny)))
     write(*,*)
 
+#ifdef LEGACY
+    call legacy_fft2d_backward(uz3f_leg_r, uz3f_leg_i, uz3_leg_r, uz3_leg_i, 2*nx, 2*ny)
+
+    write(*,*) "Legacy normal displacement in physical space"
+    write(*,*) "--------------------------------------------"
+    write(*,*) "Real part, min/max: ", minval(uz3_leg_r/(4*nx*ny)), maxval(uz3_leg_r/(4*nx*ny))
+    write(*,*) "Imaginary part, min/max: ", minval(uz3_leg_i/(4*nx*ny)), maxval(uz3_leg_i/(4*nx*ny))
+    write(*,*)
+
+    write(*,*) "Error on normal displacement in phys space"
+    write(*,*) "-------------------------------------------"
+    write(*,*) norm2(real(uz3/(4*nx*ny)) - uz3_leg_r/(4*nx*ny))/norm2(uz3_leg_r/(4*nx*ny))
+#endif
 
 end program test_fftw
