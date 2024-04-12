@@ -110,9 +110,46 @@ subroutine wrap_around(g, g_wrap, nx, ny)
             endif
         enddo
     enddo
-
-
 end subroutine wrap_around
+
+subroutine legacy_fft2d_forward(input_r, input_i, output_r, output_i, n1, n2)
+    !! Compute forward FFT2D with legacy source code
+    implicit none
+
+    integer, intent(in) :: n1, n2
+    real, dimension(n1, n2), intent(in) :: input_r, input_i
+    real, dimension(n1, n2), intent(out) :: output_r, output_i
+
+    integer :: n3
+
+    !! legacy routine fft computes in place: a copy must be made
+    output_r(:, :) = input_r(:, :)
+    output_i(:, :) = input_i(:, :)
+
+    n3 = n1*n2
+    call fft(output_r, output_i, n3, n1, n1, 1)
+    call fft(output_r, output_i, n3, n2, n3, 1)
+end subroutine legacy_fft2d_forward
+
+subroutine legacy_fft2d_backward(input_r, input_i, output_r, output_i, n1, n2)
+    !! Compute forward FFT2D with legacy source code
+    implicit none
+
+    integer, intent(in) :: n1, n2
+    real, dimension(n1, n2), intent(in) :: input_r, input_i
+    real, dimension(n1, n2), intent(out) :: output_r, output_i
+
+    integer :: n3
+
+    !! legacy routine fft computes in place: a copy must be made
+    output_r(:, :) = input_r(:, :)
+    output_i(:, :) = input_i(:, :)
+
+    n3 = n1*n2
+    call fft(output_r, output_i, n3, n1, n1, -1)
+    call fft(output_r, output_i, n3, n2, n3, -1)
+end subroutine legacy_fft2d_backward
+
 
 
 program test_fftw
@@ -141,6 +178,9 @@ program test_fftw
     complex, allocatable, dimension(:, :) :: in, out
     type(c_ptr) :: plan
 
+    !! Specific for lecacy fft
+    real, allocatable, dimension(:, :) :: out_leg_r, out_leg_i, zero
+
 
     !! Initialization
     E = 210000.
@@ -157,6 +197,8 @@ program test_fftw
     allocate(pres(nx, ny), pres_zp(2*nx, 2*ny), presf_zp(2*nx, 2*ny))
     allocate(uz3(2*nx, 2*ny), uz3f(2*nx, 2*ny))
     allocate(in(2*nx, 2*ny), out(2*nx, 2*ny))
+    allocate(out_leg_r(2*nx, 2*ny), out_leg_i(2*nx, 2*ny), zero(2*nx, 2*ny))
+    zero(:, :) = 0.0
 
     !! Compute influence coefficients
     do i=1, nx
@@ -186,6 +228,20 @@ program test_fftw
 
     write(*,*) "Influence coefficients in Fourier space"
     write(*,*) "---------------------------------------"
+    write(*,*) "Real part, min/max: ", minval(real(gf_love_wrap)), maxval(real(gf_love_wrap))
+    write(*,*) "Imaginary part, min/max: ", minval(aimag(gf_love_wrap)), maxval(aimag(gf_love_wrap))
+    write(*,*)
+
+    write(*,*) "Influence coefficients in physical space (are they changed ?)"
+    write(*,*) "-------------------------------------------------------------"
+    write(*,*) "Real part, min/max: ", minval(real(in)), maxval(real(in))
+    write(*,*) "Imaginary part, min/max: ", minval(aimag(in)), maxval(aimag(in))
+    write(*,*)
+
+    call legacy_fft2d_forward(g_love_wrap, zero, out_leg_r, out_leg_i, 2*nx, 2*ny)
+
+    write(*,*) "Legagcy influence coefficients in Fourier space"
+    write(*,*) "-----------------------------------------------"
     write(*,*) "Real part, min/max: ", minval(real(gf_love_wrap)), maxval(real(gf_love_wrap))
     write(*,*) "Imaginary part, min/max: ", minval(aimag(gf_love_wrap)), maxval(aimag(gf_love_wrap))
     write(*,*)
