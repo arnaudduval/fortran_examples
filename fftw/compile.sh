@@ -6,6 +6,7 @@
 if [[ $1 = "-legacy" ]]
 then
     gfortran love_coef.F90 fft.for -o prog -lfftw3f -L/usr/lib/x86_64-linux-gnu -I /usr/include -DLEGACY
+    gfortran random.F90 fft.for -o random -lfftw3f -L/usr/lib/x86_64-linux-gnu -I /usr/include
 else
     gfortran love_coef.F90 -o prog -lfftw3f -L/usr/lib/x86_64-linux-gnu -I /usr/include
 fi

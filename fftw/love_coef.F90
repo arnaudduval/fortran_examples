@@ -264,7 +264,7 @@ program test_fftw
 #ifdef LEGACY
     call legacy_fft2d_forward(g_love_wrap, zero, out_Cleg_r, out_Cleg_i, 2*nx, 2*ny)
 
-    write(*,*) "Legagcy influence coefficients in Fourier space"
+    write(*,*) "Legacy influence coefficients in Fourier space"
     write(*,*) "-----------------------------------------------"
     write(*,*) "Real part, min/max: ", minval(out_Cleg_r), maxval(out_Cleg_r)
     write(*,*) "Imaginary part, min/max: ", minval(out_Cleg_i), maxval(out_Cleg_i)
@@ -303,10 +303,12 @@ program test_fftw
 
 #ifdef LEGACY
     call legacy_fft2d_forward(pres_zp, zero, out_Pleg_r, out_Pleg_i, 2*nx, 2*ny)
-    write(*,*) "Legagcy pressure in Fourier space"
+    write(*,*) "Legacy pressure in Fourier space"
     write(*,*) "---------------------------------"
     write(*,*) "Real part, min/max: ", minval(out_Pleg_r), maxval(out_Pleg_r)
     write(*,*) "Imaginary part, min/max: ", minval(out_Pleg_i), maxval(out_Pleg_i)
+    write(*,*) "Error Legacy/FFTW:", norm2(out_Pleg_r-real(presf_zp))/norm2(out_Pleg_r), &
+                    norm2(out_Pleg_i-aimag(presf_zp))/norm2(out_Pleg_i)
     write(*,*)
 #endif
 

@@ -36,3 +36,4 @@ strings/prog
 fftw/prog
 fftw/fft.for
 complex/prog
+fftw/random
